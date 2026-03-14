@@ -1558,7 +1558,7 @@ export function DashboardClient({ data }: { data: DashboardData }) {
                   <div>
                     <p className="text-xs font-bold uppercase tracking-widest text-[#93c713]">Next action</p>
                     <h3 className="mt-2 text-2xl font-black text-black tracking-tight">
-                      {nextSuggestion ? "Clear the next settlement" : "You&apos;re caught up"}
+                      {nextSuggestion ? "Clear the next settlement" : "You're caught up"}
                     </h3>
                   </div>
                   <span className="px-3 py-1 rounded-full border-2 border-black text-xs font-bold uppercase tracking-wider bg-white">
