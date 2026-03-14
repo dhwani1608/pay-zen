@@ -1,17 +1,13 @@
 import NextAuth from "next-auth";
 import { PrismaAdapter } from "@auth/prisma-adapter";
-import { prisma } from "@/lib/prisma"; // Path to your Prisma client
 import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
+import { authConfig } from "@/auth.config";
+import { prisma } from "@/lib/prisma";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  ...authConfig,
   adapter: PrismaAdapter(prisma),
-  pages: {
-    signIn: "/login",
-  },
-  session: {
-    strategy: "jwt", // Required when using the Credentials provider
-  },
   providers: [
     CredentialsProvider({
       name: "Credentials",
@@ -54,22 +50,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       },
     }),
   ],
-  callbacks: {
-    // Because we are using JWTs, we need to pass the user ID into the token...
-    async jwt({ token, user }) {
-      if (user) {
-        token.id = user.id;
-      }
-      return token;
-    },
-    // ...and then pass that ID from the token into the session
-    async session({ session, token }) {
-      if (token && session.user) {
-        session.user.id = token.id as string;
-      }
-      return session;
-    },
-  },
 });
 
 export const { GET, POST } = handlers;

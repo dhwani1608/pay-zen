@@ -1,9 +1,10 @@
 "use client";
 
+import Image from "next/image";
 import { useState, useTransition, useRef, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { StaggerContainer, SlideUp, FadeIn } from "@/components/motion-wrapper";
+import { StaggerContainer, SlideUp } from "@/components/motion-wrapper";
 import { ExpenseCategory, SplitMethod } from "@/generated/prisma/enums";
 import { addExpense, editExpense, deleteExpense } from "@/app/actions/expenses";
 import { addMemberToGroup } from "@/app/actions/groups";
@@ -60,7 +61,8 @@ type SettlementItem = {
   toId: string;
   toName: string;
   amount: number;
-  status: string;
+  status: "PENDING" | "COMPLETED" | "FAILED";
+  method: "APP" | "EXTERNAL";
   createdAt: string;
 };
 
@@ -227,13 +229,13 @@ const sectionIcons: Record<SectionKey, () => React.JSX.Element> = {
 };
 
 const allSectionDefs = [
-  { key: "dashboard" as const, label: "Dashboard", subtitle: "Command center" },
-  { key: "groups" as const, label: "Groups", subtitle: "Squads & ledgers" },
-  { key: "settlements" as const, label: "Settlements", subtitle: "Clear your debts" },
-  { key: "activity" as const, label: "Activity", subtitle: "The paper trail" },
-  { key: "analytics" as const, label: "Analytics", subtitle: "Follow the money" },
-  { key: "whiteboard" as const, label: "Whiteboard", subtitle: "Group notes" },
-  { key: "templates" as const, label: "Templates", subtitle: "Quick add" },
+  { key: "dashboard" as const, label: "Studio", subtitle: "Daily board" },
+  { key: "groups" as const, label: "Groups", subtitle: "People & invites" },
+  { key: "settlements" as const, label: "Settle", subtitle: "Clear balances" },
+  { key: "activity" as const, label: "Ledger", subtitle: "Edit trail" },
+  { key: "analytics" as const, label: "Insights", subtitle: "Spending map" },
+  { key: "whiteboard" as const, label: "Notes", subtitle: "Board + budget" },
+  { key: "templates" as const, label: "Templates", subtitle: "Saved fills" },
 ];
 const sections: { key: SectionKey; label: string; subtitle: string }[] = allSectionDefs;
 
@@ -340,6 +342,7 @@ function LineChart({ points, currencyCode = "INR", rate = 1 }: { points: Analyti
   const height = 220;
   const max = Math.max(...points.map((point) => point.amount), 1);
   const stepX = points.length > 1 ? width / (points.length - 1) : width;
+  const latestAmount = points.at(-1)?.amount ?? 0;
   const polyline = points
     .map((point, index) => {
       const x = index * stepX;
@@ -412,6 +415,9 @@ function LineChart({ points, currencyCode = "INR", rate = 1 }: { points: Analyti
           );
         })}
       </svg>
+      <p className="mt-3 text-right text-xs text-[var(--muted)]">
+        Latest: {formatCurrency(latestAmount, currencyCode, rate)}
+      </p>
     </div>
   );
 }
@@ -492,6 +498,7 @@ export function DashboardClient({ data }: { data: DashboardData }) {
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(
     data.initialGroupId,
   );
+  const [confirmExitGroupId, setConfirmExitGroupId] = useState<string | null>(null);
   const [focusedFlowUserId, setFocusedFlowUserId] = useState<string>(data.userId);
   const [topUpAmount, setTopUpAmount] = useState("2500");
   const [memberEmail, setMemberEmail] = useState("");
@@ -636,8 +643,14 @@ export function DashboardClient({ data }: { data: DashboardData }) {
     });
   };
 
-  const handleExitGroup = async (groupId: string) => {
-    if (!confirm("Are you sure you want to leave this group?")) return;
+  const isExitingRef = useRef(false);
+  const handleExitGroupInit = (groupId: string) => {
+    setConfirmExitGroupId(groupId);
+  };
+
+  const handleExitGroupConfirm = async (groupId: string) => {
+    if (isExitingRef.current) return;
+    isExitingRef.current = true;
     startTransition(async () => {
       try {
         const res = await exitGroup({ groupId });
@@ -651,11 +664,12 @@ export function DashboardClient({ data }: { data: DashboardData }) {
           } else {
             setSelectedGroupId(null);
           }
-          router.refresh();
         }
       } catch (e) {
         showToast("Could not exit group. You may have unsettled debts.", "error");
         console.error(e);
+      } finally {
+        isExitingRef.current = false;
       }
     });
   };
@@ -1059,31 +1073,32 @@ export function DashboardClient({ data }: { data: DashboardData }) {
   }
 
   const overviewCards = [
-    { label: "Wallet balance", value: displayCurrency(data.walletBalance), accent: true },
+    { label: "Wallet pocket", value: displayCurrency(data.walletBalance), accent: true },
     {
-      label: "Active group spend",
+      label: "Group spend",
       value: displayCurrency(activeGroup?.totalExpenseAmount ?? 0),
       accent: false,
     },
-    { label: "Groups joined", value: String(data.groups.length), accent: false },
+    { label: "Circles joined", value: String(data.groups.length), accent: false },
     {
-      label: "Min. transactions",
+      label: "Clean-up moves",
       value: String(activeGroup?.suggestions.length ?? 0),
       accent: false,
     },
   ];
   const currentSection = sections.find((item) => item.key === section) ?? sections[0];
+  const quickAccessSections = sections.filter((item) => item.key !== section);
 
   return (
-    <div className="workspace-shell">
+        <div className="workspace-shell">
       <aside className="sidebar">
         <div className="sidebar-brand">
           <div className="sidebar-brand__mark">PZ</div>
-          <div>
-            <p className="sidebar-eyebrow">Workspace</p>
-            <h2 className="sidebar-title">PayZen</h2>
+          <div className="sidebar-brand__copy">
+            <p className="sidebar-eyebrow">Sketchboard</p>
+            <h2 className="sidebar-title">PayZen Desk</h2>
             <p className="sidebar-subtitle">
-              Split expenses. Settle debts. No drama.
+              Draw the plan. Share the bill. Close the loop.
             </p>
           </div>
         </div>
@@ -1107,9 +1122,9 @@ export function DashboardClient({ data }: { data: DashboardData }) {
                       transition={{ type: "spring", stiffness: 300, damping: 25 }}
                     />
                   )}
-                  <div className="relative z-10 flex items-center gap-3">
+                  <div className="relative z-10 sidebar-link__content">
                     <Icon />
-                    <div>
+                    <div className="sidebar-link__text">
                       <strong>{item.label}</strong>
                       <span>{item.subtitle}</span>
                     </div>
@@ -1134,7 +1149,7 @@ export function DashboardClient({ data }: { data: DashboardData }) {
                 type="button"
               >
                 <span>{groupInitials(group.name)}</span>
-                <div>
+                <div className="group-chip__text">
                   <strong>{group.name}</strong>
                   <p>{group.members.length} members</p>
                 </div>
@@ -1144,7 +1159,7 @@ export function DashboardClient({ data }: { data: DashboardData }) {
         </div>
 
         {/* Currency selector at bottom of sidebar */}
-        <div className="px-2 pt-2 pb-1">
+        <div className="sidebar-currency">
           <p className="sidebar-eyebrow mb-2">Display currency</p>
           <select
             value={currencyCode}
@@ -1162,6 +1177,49 @@ export function DashboardClient({ data }: { data: DashboardData }) {
       </aside>
 
       <section className="workspace-main" style={{ position: "relative" }}>
+        {/* Custom Confirm Modal */}
+        <AnimatePresence>
+          {confirmExitGroupId && (
+            <motion.div 
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+            >
+              <motion.div 
+                initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+                className="bg-[var(--bg-primary)] p-6 rounded-2xl border border-[var(--glass-border)] shadow-2xl max-w-sm w-full"
+              >
+                <div className="flex items-center gap-3 mb-4 text-[var(--danger)]">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                  <h3 className="text-lg font-bold text-[var(--text-strong)]">Leave Group?</h3>
+                </div>
+                <p className="text-sm text-[var(--muted)] mb-6 leading-relaxed">
+                  Are you sure you want to exit this group? You will lose access to its ledger and history.
+                </p>
+                <div className="flex justify-end gap-3">
+                  <button 
+                    type="button"
+                    className="px-4 py-2 rounded-xl text-sm font-bold text-[var(--text-strong)] bg-[var(--surface-hover)] hover:bg-[var(--border)] transition-colors"
+                    onClick={() => setConfirmExitGroupId(null)}
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    type="button"
+                    className="px-4 py-2 rounded-xl text-sm font-bold bg-[var(--danger)] text-white hover:opacity-90 transition-opacity shadow-lg shadow-red-500/20"
+                    onClick={() => {
+                      const id = confirmExitGroupId;
+                      setConfirmExitGroupId(null);
+                      handleExitGroupConfirm(id);
+                    }}
+                  >
+                    Yes, Exit Group
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Toast Container */}
         <div className="toast-container">
           {toasts.map((toast) => (
@@ -1259,7 +1317,7 @@ export function DashboardClient({ data }: { data: DashboardData }) {
               <div className="workspace-hero__copy">
                 <p className="workspace-hero__eyebrow">{currentSection.label}</p>
                 <h2 className="workspace-hero__title">
-                  {currentSection.label === "Dashboard"
+                  {section === "dashboard"
                     ? activeGroup?.name ?? "No group selected"
                     : currentSection.label}
                 </h2>
@@ -1283,13 +1341,13 @@ export function DashboardClient({ data }: { data: DashboardData }) {
                   <strong>{activeGroup?.suggestions.length ?? 0} txns</strong>
                 </div>
                 <div className="workspace-hero__stat mt-auto pt-2 hidden sm:block">
-                  <button onClick={() => activeGroup && handleExitGroup(activeGroup.id)} className="text-xs font-bold text-[var(--danger)] hover:underline opacity-80 hover:opacity-100 transition-opacity uppercase tracking-wider">
+                  <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); if (activeGroup) { handleExitGroupInit(activeGroup.id); } }} className="text-xs font-bold text-[var(--danger)] hover:underline opacity-80 hover:opacity-100 transition-opacity uppercase tracking-wider">
                     Exit Group
                   </button>
                 </div>
               </div>
               <div className="workspace-hero__actions mt-3 sm:hidden px-6 pb-2">
-                 <button onClick={() => activeGroup && handleExitGroup(activeGroup.id)} className="text-xs font-bold text-[var(--danger)] hover:underline opacity-80 hover:opacity-100 transition-opacity uppercase tracking-wider">
+                 <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); if (activeGroup) { handleExitGroupInit(activeGroup.id); } }} className="text-xs font-bold text-[var(--danger)] hover:underline opacity-80 hover:opacity-100 transition-opacity uppercase tracking-wider">
                     Exit Group
                  </button>
               </div>
@@ -1303,6 +1361,20 @@ export function DashboardClient({ data }: { data: DashboardData }) {
                     {card.value}
                   </h3>
                 </article>
+              ))}
+            </div>
+
+            <div className="section-atlas">
+              {quickAccessSections.map((item) => (
+                <button
+                  key={item.key}
+                  className="section-atlas__card"
+                  onClick={() => setSection(item.key)}
+                  type="button"
+                >
+                  <span>{item.label}</span>
+                  <strong>{item.subtitle}</strong>
+                </button>
               ))}
             </div>
           </>
@@ -2205,10 +2277,13 @@ export function DashboardClient({ data }: { data: DashboardData }) {
                     onClick={() => navigator.clipboard.writeText(inviteLink)}
                     title="Click to copy link"
                   >
-                    <img
+                    <Image
                       src={`https://api.qrserver.com/v1/create-qr-code/?size=110x110&data=${encodeURIComponent(inviteLink)}`}
                       alt="Invite QR Code"
-                      className="w-[90px] h-[90px] block"
+                      className="block h-[90px] w-[90px]"
+                      height={90}
+                      unoptimized
+                      width={90}
                     />
                   </div>
                   <div className="flex-1 min-w-0">

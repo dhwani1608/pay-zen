@@ -232,6 +232,7 @@ export async function getDashboardData(userId: string) {
           ),
           amount: roundCurrency(settlement.amount),
           status: settlement.status,
+          method: settlement.method,
           createdAt: settlement.createdAt.toISOString(),
         })),
         suggestions: suggestions.map((suggestion) => ({

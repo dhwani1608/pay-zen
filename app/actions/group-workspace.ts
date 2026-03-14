@@ -3,6 +3,7 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { generateInviteCode } from "@/lib/group";
+import { revalidatePath } from "next/cache";
 
 export async function createGroup({
   name,
@@ -36,6 +37,7 @@ export async function createGroup({
     },
   });
 
+  revalidatePath("/");
   return { success: "Group created.", groupId: group.id };
 }
 
@@ -74,6 +76,7 @@ export async function joinGroup({
     return { error: "You are already a member of this group." };
   }
 
+  revalidatePath("/");
   return { success: `Joined ${group.name}.`, groupId: group.id };
 }
 
@@ -97,11 +100,14 @@ export async function exitGroup({ groupId }: { groupId: string }) {
     });
 
     if (membersCount === 0) {
+      await prisma.settlement.deleteMany({ where: { groupId } });
       await prisma.group.delete({ where: { id: groupId } });
     }
 
+    revalidatePath("/");
     return { success: "Left the group." };
   } catch (err) {
-    return { error: "Failed to leave the group. Make sure you are a member." };
+    console.error("Error exiting group:", err);
+    return { error: "Failed to leave the group. Make sure you are a member and do not have unsettled dependencies." };
   }
 }

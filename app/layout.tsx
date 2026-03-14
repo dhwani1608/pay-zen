@@ -1,17 +1,10 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter",
-  display: "swap",
-});
-
 export const metadata: Metadata = {
-  title: "PayZen — Calm Finances for Shared Plans",
+  title: "PayZen | Shared Money, Drawn Clearly",
   description:
-    "A polished shared-expense workspace with wallet funding and Stripe payments.",
+    "A handwritten-style shared expense workspace for groups, wallets, settlements, notes, and insights.",
 };
 
 export default function RootLayout({
@@ -20,11 +13,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={inter.variable}>
+    <html lang="en">
       <head>
-        <meta name="theme-color" content="#0a0e1a" />
+        <meta name="theme-color" content="#f2e1be" />
       </head>
-      <body>{children}</body>
+      <body className="app-body">{children}</body>
     </html>
   );
 }

@@ -155,7 +155,7 @@ export async function deleteExpense({ expenseId }: { expenseId: string }) {
       where: { id: expenseId },
     });
     return { success: "Transaction deleted." };
-  } catch (error) {
+  } catch {
     return { error: "Failed to delete transaction." };
   }
 }
@@ -228,7 +228,7 @@ export async function editExpense(
     });
 
     return { success: "Transaction updated." };
-  } catch (error) {
+  } catch {
     return { error: "Failed to update transaction." };
   }
 }

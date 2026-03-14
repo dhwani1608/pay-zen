@@ -1,9 +1,11 @@
 // proxy.ts
+import NextAuth from "next-auth";
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { authConfig } from "@/auth.config";
 
 // Routes only meant for unauthenticated users
 const authRoutes = ["/register", "/login", "/api/auth/signin"];
+const { auth } = NextAuth(authConfig);
 
 export default auth((req) => {
   const isLoggedIn = !!req.auth;

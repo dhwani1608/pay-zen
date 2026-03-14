@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { acceptInvite } from "@/app/actions/invite";
@@ -31,51 +32,51 @@ export default function InviteClient({
   }
 
   return (
-    <div className="auth-shell">
-      <div className="auth-main">
-        <div className="auth-card text-center space-y-5">
-          <div className="mx-auto w-16 h-16 rounded-xl bg-[var(--accent)]/12 border border-[var(--accent)]/20 flex items-center justify-center">
-            <svg width="28" height="28" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
-              <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2" />
-              <circle cx="9" cy="7" r="4" />
-              <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" />
-            </svg>
-          </div>
+    <main className="auth-paper auth-paper--invite">
+      <section className="auth-paper__showcase">
+        <div className="scribble-badge">Invitation ready</div>
+        <h1>{groupName} wants you on the board.</h1>
+        <p>
+          Step into the same shared ledger, settlement plan, and notes wall as
+          the rest of the group.
+        </p>
+      </section>
 
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-[var(--text-strong)]">
-              Join {groupName}
-            </h1>
-            <p className="mt-1 text-sm text-[var(--muted)]">
-              {memberCount} member{memberCount !== 1 ? "s" : ""} already in this group
-            </p>
-          </div>
+      <section className="auth-paper__form">
+        <div className="auth-card auth-card--paper auth-card--centered">
+          <p className="auth-card__eyebrow">Invite</p>
+          <h2>Join {groupName}</h2>
+          <p className="auth-card__copy">
+            {memberCount} member{memberCount !== 1 ? "s" : ""} already inside
+            this group.
+          </p>
 
-          {error && <div className="form-error">{error}</div>}
+          {error ? <div className="form-error">{error}</div> : null}
 
           {isLoggedIn ? (
             <button
-              className="primary-button w-full justify-center"
+              className="primary-button auth-form__submit"
               onClick={handleJoin}
               disabled={pending}
+              type="button"
             >
-              {pending ? "Joining…" : "Accept & Join Group"}
+              {pending ? "Joining…" : "Accept invite"}
             </button>
           ) : (
-            <div className="space-y-3">
-              <p className="text-sm text-[var(--muted)]">
-                Sign in to join this group
-              </p>
-              <a href="/login" className="primary-button inline-flex">
-                Sign In
-              </a>
-              <a href="/register" className="secondary-button inline-flex ml-2">
-                Register
-              </a>
+            <div className="invite-actions">
+              <p>Sign in first to accept this invite.</p>
+              <div className="invite-actions__buttons">
+                <Link href="/login" className="primary-button">
+                  Sign in
+                </Link>
+                <Link href="/register" className="secondary-button">
+                  Register
+                </Link>
+              </div>
             </div>
           )}
         </div>
-      </div>
-    </div>
+      </section>
+    </main>
   );
 }
