@@ -99,16 +99,41 @@ model VerificationToken {
 // --- Expense Splitting Core Models ---
 
 model Group {
-  id          String   @id @default(cuid())
-  name        String
-  description String?
-  inviteCode  String?  @unique
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id             String   @id @default(cuid())
+  name           String
+  description    String?
+  inviteCode     String?  @unique
+  monthlyLimit   Float?
+  limitAlertSent Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   members     GroupMember[]
   expenses    Expense[]
   settlements Settlement[]
+  invites     GroupInvite[]
+  notes       GroupNote[]
+}
+
+model GroupInvite {
+  id        String   @id @default(cuid())
+  groupId   String
+  token     String   @unique @default(cuid())
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+}
+
+model GroupNote {
+  id        String   @id @default(cuid())
+  groupId   String
+  authorId  String
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
 }
 
 model GroupMember {
@@ -125,14 +150,14 @@ model GroupMember {
 }
 
 model Expense {
-  id          String      @id @default(cuid())
+  id          String          @id @default(cuid())
   description String
-  amount      Float // Total amount of the expense 
-  date        DateTime    @default(now())
+  amount      Float
+  date        DateTime        @default(now())
   groupId     String
-  payerId     String // The user who paid the bill 
+  payerId     String
   category    ExpenseCategory @default(OTHER)
-  splitMethod SplitMethod @default(EQUAL) // EQUAL, PERCENT, CUSTOM 
+  splitMethod SplitMethod     @default(EQUAL)
 
   group  Group          @relation(fields: [groupId], references: [id], onDelete: Cascade)
   payer  User           @relation("PaidBy", fields: [payerId], references: [id])
@@ -159,8 +184,8 @@ model ExpenseSplit {
   id         String @id @default(cuid())
   expenseId  String
   userId     String
-  amount     Float // The specific portion this user owes 
-  percentage Float? // Optional: used if splitMethod is PERCENT
+  amount     Float
+  percentage Float?
 
   expense Expense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
 }
@@ -169,11 +194,11 @@ model Settlement {
   id            String           @id @default(cuid())
   amount        Float
   groupId       String
-  fromId        String // User who is paying
-  toId          String // User receiving the money
+  fromId        String
+  toId          String
   status        SettlementStatus @default(PENDING)
-  method        PaymentMethod // APP or EXTERNAL [cite: 9]
-  transactionId String? // Stripe/Razorpay reference [cite: 23]
+  method        PaymentMethod
+  transactionId String?
   createdAt     DateTime         @default(now())
 
   group    Group @relation(fields: [groupId], references: [id])

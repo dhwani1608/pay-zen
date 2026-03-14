@@ -2,6 +2,7 @@ import Link from "next/link";
 import { auth, signOut } from "@/auth";
 import { DashboardClient } from "@/components/dashboard-client";
 import { getDashboardData } from "@/lib/dashboard";
+import { redirect } from "next/navigation";
 
 export default async function Home() {
   const session = await auth();
@@ -187,7 +188,15 @@ export default async function Home() {
     );
   }
 
-  const dashboardData = await getDashboardData(session.user.id);
+  let dashboardData;
+  try {
+    dashboardData = await getDashboardData(session.user.id);
+  } catch (error) {
+    if (error instanceof Error && error.message === "User not found.") {
+      redirect("/api/auth/signout?callbackUrl=/");
+    }
+    throw error;
+  }
 
   return (
     <main className="mx-auto min-h-screen w-full max-w-7xl px-6 py-8 sm:px-10 lg:px-12">

@@ -132,8 +132,12 @@ export async function addExpense(data: AddExpensePayload) {
         data: splitData,
       });
 
-      return expense;
+    return expense;
     });
+
+    // Check budget limit and send alerts if needed
+    const { checkBudgetAndAlert } = await import("@/app/actions/budget");
+    await checkBudgetAndAlert(groupId);
 
     return { success: true, expenseId: newExpense.id };
   } catch (error) {

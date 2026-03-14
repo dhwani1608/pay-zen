@@ -1,22 +1,26 @@
 "use client";
 
-import { useState, useTransition, useRef, useCallback } from "react";
+import { useState, useTransition, useRef, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { ExpenseCategory, SplitMethod } from "@/generated/prisma/enums";
 import { addExpense } from "@/app/actions/expenses";
 import { addMemberToGroup } from "@/app/actions/groups";
 import { createGroup, joinGroup } from "@/app/actions/group-workspace";
 import { executeWalletSettlement } from "@/app/actions/settle";
-import { addDummyFunds } from "@/app/actions/wallet";
 import { scanBill } from "@/app/actions/scan-bill";
 import { parseVoiceExpense } from "@/app/actions/parse-voice";
+import { createInviteLink } from "@/app/actions/invite";
+import { addNote, getNotes, deleteNote } from "@/app/actions/notes";
+import { chatWithAdvisor } from "@/app/actions/chat";
+import { setMonthlyLimit } from "@/app/actions/budget";
 
 type SectionKey =
   | "dashboard"
   | "groups"
   | "settlements"
   | "activity"
-  | "analytics";
+  | "analytics"
+  | "whiteboard";
 
 type WalletTransaction = {
   id: string;
@@ -187,12 +191,25 @@ function IconAnalytics() {
   );
 }
 
+function IconWhiteboard() {
+  return (
+    <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="16" y1="13" x2="8" y2="13" />
+      <line x1="16" y1="17" x2="8" y2="17" />
+      <polyline points="10 9 9 9 8 9" />
+    </svg>
+  );
+}
+
 const sectionIcons: Record<SectionKey, () => React.JSX.Element> = {
   dashboard: IconDashboard,
   groups: IconGroups,
   settlements: IconSettlements,
   activity: IconActivity,
   analytics: IconAnalytics,
+  whiteboard: IconWhiteboard,
 };
 
 const sections: { key: SectionKey; label: string; subtitle: string }[] = [
@@ -201,6 +218,7 @@ const sections: { key: SectionKey; label: string; subtitle: string }[] = [
   { key: "settlements", label: "Settlements", subtitle: "Clear your debts" },
   { key: "activity", label: "Activity", subtitle: "The paper trail" },
   { key: "analytics", label: "Analytics", subtitle: "Follow the money" },
+  { key: "whiteboard", label: "Whiteboard", subtitle: "Group notes" },
 ];
 
 const splitMethodOptions: { key: SplitMethod; label: string }[] = [
@@ -213,11 +231,11 @@ const categoryOptions = Object.values(ExpenseCategory);
 const chartColors = [
   "#00d4aa",
   "#f5a623",
-  "#5b8def",
+  "#0096ff",
   "#ff5a6e",
   "#a78bfa",
   "#f472b6",
-  "#6ee7b7",
+  "#00d4aa",
 ];
 
 function formatCurrency(amount: number) {
@@ -470,6 +488,17 @@ export function DashboardClient({ data }: { data: DashboardData }) {
   const [splitMethod, setSplitMethod] = useState<SplitMethod>("EQUAL");
   const [splitValues, setSplitValues] = useState<Record<string, string>>({});
   const [settleState, setSettleState] = useState({ toUserId: "", amount: "" });
+  // ── New feature state ──
+  const [noteText, setNoteText] = useState("");
+  const [notes, setNotes] = useState<{ id: string; content: string; authorId: string; createdAt: string }[]>([]);
+  const [notesLoaded, setNotesLoaded] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState<{ role: "user" | "ai"; text: string }[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatPending, setChatPending] = useState(false);
+  const [inviteLink, setInviteLink] = useState("");
+  const [budgetInput, setBudgetInput] = useState("");
+  const chatEndRef = useRef<HTMLDivElement>(null);
   const [scanning, setScanning] = useState(false);
   const [recording, setRecording] = useState(false);
   const [voiceTranscript, setVoiceTranscript] = useState("");
@@ -510,6 +539,89 @@ export function DashboardClient({ data }: { data: DashboardData }) {
     });
   }
 
+  // ── New feature effects ──
+  useEffect(() => {
+    if (section === "whiteboard" && activeGroup && !notesLoaded) {
+      getNotes(activeGroup.id).then((result) => {
+        if (result.notes) { setNotes(result.notes); setNotesLoaded(true); }
+      });
+    }
+  }, [section, activeGroup, notesLoaded]);
+
+  useEffect(() => { setNotesLoaded(false); setNotes([]); setInviteLink(""); }, [selectedGroupId]);
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatMessages]);
+
+  async function handleAddNote() {
+    if (!activeGroup || !noteText.trim()) return;
+    startTransition(async () => {
+      const result = await addNote(activeGroup.id, noteText);
+      if (result.error) { showToast(result.error, "error"); return; }
+      if (result.note) { setNotes((prev) => [result.note!, ...prev]); setNoteText(""); }
+    });
+  }
+
+  async function handleDeleteNote(noteId: string) {
+    startTransition(async () => {
+      const result = await deleteNote(noteId);
+      if (result.error) { showToast(result.error, "error"); return; }
+      setNotes((prev) => prev.filter((n) => n.id !== noteId));
+    });
+  }
+
+  async function handleChat(msg?: string) {
+    const text = msg || chatInput.trim();
+    if (!text || !activeGroup) return;
+    setChatInput("");
+    setChatMessages((prev) => [...prev, { role: "user", text }]);
+    setChatPending(true);
+    const result = await chatWithAdvisor(text, {
+      walletBalance: data.walletBalance,
+      totalSpend: activeGroup.totalExpenseAmount,
+      monthlyLimit: null,
+      recentExpenses: activeGroup.expenses.slice(0, 15).map((e) => ({
+        description: e.description, amount: e.amount, category: e.category, date: e.date,
+      })),
+      groupName: activeGroup.name,
+    });
+    setChatPending(false);
+    setChatMessages((prev) => [...prev, { role: "ai", text: result.reply ?? result.error ?? "No response." }]);
+  }
+
+  async function handleGenerateInvite() {
+    if (!activeGroup) return;
+    startTransition(async () => {
+      const result = await createInviteLink(activeGroup.id);
+      if (result.error) { showToast(result.error, "error"); return; }
+      if (result.token) {
+        const url = `${window.location.origin}/invite/${result.token}`;
+        setInviteLink(url);
+        navigator.clipboard.writeText(url).then(() => showToast("Invite link copied!", "success")).catch(() => {});
+      }
+    });
+  }
+
+  async function handleSetBudget() {
+    if (!activeGroup) return;
+    const limit = Number(budgetInput);
+    if (!Number.isFinite(limit) || limit < 0) { showToast("Enter a valid limit.", "error"); return; }
+    startTransition(async () => {
+      const result = await setMonthlyLimit(activeGroup.id, limit);
+      if (result.error) { showToast(result.error, "error"); return; }
+      showToast(result.success ?? "Budget updated.", "success");
+      router.refresh();
+    });
+  }
+
+  function formatDate(dateStr: string) {
+    const d = new Date(dateStr);
+    const now = new Date();
+    const diffDays = Math.floor((now.getTime() - d.getTime()) / 86400000);
+    if (diffDays < 7) {
+      return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+    }
+    return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+  }
+
   const focusedExplainability =
     activeGroup?.moneyFlow.explainability.find(
       (member) => member.userId === focusedFlowUserId,
@@ -544,24 +656,7 @@ export function DashboardClient({ data }: { data: DashboardData }) {
     }
   }
 
-  async function handleDummyFunds() {
-    ;
-    const amount = Number(topUpAmount);
-    if (!Number.isFinite(amount) || amount < 1) {
-      showToast("Enter a valid amount.", "error");
-      return;
-    }
-    startTransition(async () => {
-      const result = await addDummyFunds(amount);
-      if (result.error) {
-        showToast(result.error, "error");
-      } else {
-        showToast(result.success ?? "Test funds added.", "success");
-        setTopUpAmount("");
-        router.refresh();
-      }
-    });
-  }
+  // handleDummyFunds removed — Stripe-only top-up now
 
   function submitExpense() {
     if (!activeGroup) return;
@@ -910,16 +1005,11 @@ export function DashboardClient({ data }: { data: DashboardData }) {
         </div>
       </aside>
 
-      <section className="workspace-main relative">
+      <section className="workspace-main">
         {/* Toast Container */}
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2 pointer-events-none">
+        <div className="toast-container">
           {toasts.map((toast) => (
-            <div
-              key={toast.id}
-              className={`px-4 py-3 rounded-md shadow-lg font-medium text-sm text-white pointer-events-auto transition-all animate-in fade-in slide-in-from-top-5 duration-300 ${
-                toast.type === "error" ? "bg-red-500" : toast.type === "success" ? "bg-[var(--accent)]" : "bg-gray-800"
-              }`}
-            >
+            <div key={toast.id} className={`toast toast--${toast.type}`}>
               {toast.text}
             </div>
           ))}
@@ -1001,14 +1091,9 @@ export function DashboardClient({ data }: { data: DashboardData }) {
                   <label htmlFor="topup-ob">Amount (₹)</label>
                   <input id="topup-ob" inputMode="decimal" min="1" step="1" value={topUpAmount} onChange={(e) => setTopUpAmount(e.target.value)} placeholder="500" />
                 </div>
-                <button className="primary-button w-full justify-center" onClick={handleDummyFunds} disabled={pending} type="button">
-                  {pending ? <><span className="spinner" /> Adding…</> : "Add test funds"}
+                <button className="primary-button w-full justify-center" onClick={handleTopUp} disabled={pending} type="button">
+                  {pending ? <><span className="spinner" /> Processing…</> : "Top up via Stripe"}
                 </button>
-                {data.hasStripe ? (
-                  <button className="secondary-button w-full justify-center" onClick={handleTopUp} type="button">
-                    Pay with Stripe
-                  </button>
-                ) : null}
               </div>
             </article>
           </div>
@@ -1136,20 +1221,11 @@ export function DashboardClient({ data }: { data: DashboardData }) {
                   <button
                     className="primary-button w-full justify-center"
                     disabled={pending}
-                    onClick={handleDummyFunds}
+                    onClick={handleTopUp}
                     type="button"
                   >
-                    {pending ? <><span className="spinner" /> Adding…</> : "Add test funds"}
+                    {pending ? <><span className="spinner" /> Processing…</> : "Top up via Stripe"}
                   </button>
-                  {data.hasStripe ? (
-                    <button
-                      className="secondary-button w-full justify-center"
-                      onClick={handleTopUp}
-                      type="button"
-                    >
-                      Pay with Stripe
-                    </button>
-                  ) : null}
                 </div>
               </article>
 
@@ -1794,7 +1870,139 @@ export function DashboardClient({ data }: { data: DashboardData }) {
           </div>
         </article>
         ) : null}
+
+        {/* ── Whiteboard Section ── */}
+        {data.groups.length > 0 && section === "whiteboard" ? (
+          <article className="section-animate panel panel--soft space-y-5">
+            <div className="mb-3">
+              <p className="eyebrow">Whiteboard</p>
+              <h2 className="mt-2 text-xl font-bold tracking-[-0.04em] text-[var(--text-strong)]">Group Notes</h2>
+            </div>
+
+            {/* Invite link sharing */}
+            <div className="space-y-3">
+              <p className="eyebrow">Share invite</p>
+              <div className="invite-share-row">
+                <input readOnly value={inviteLink} placeholder="Generate an invite link..." />
+                <button className="primary-button" onClick={handleGenerateInvite} disabled={pending} type="button">
+                  {inviteLink ? "Regenerate" : "Generate"}
+                </button>
+              </div>
+            </div>
+
+            <div className="divider" />
+
+            {/* Budget settings */}
+            <div className="space-y-3">
+              <p className="eyebrow">Monthly budget</p>
+              <div className="invite-share-row">
+                <input inputMode="decimal" value={budgetInput} onChange={(e) => setBudgetInput(e.target.value)} placeholder="e.g. 10000" />
+                <button className="primary-button" onClick={handleSetBudget} disabled={pending} type="button">
+                  Set limit
+                </button>
+              </div>
+            </div>
+
+            <div className="divider" />
+
+            {/* Add note */}
+            <div className="note-input-row">
+              <textarea value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder="Write a note for your group..." />
+              <button className="primary-button" onClick={handleAddNote} disabled={pending || !noteText.trim()} type="button">
+                Post
+              </button>
+            </div>
+
+            {/* Notes list */}
+            <div className="notes-grid">
+              {notes.length === 0 ? (
+                <div className="empty-state">No notes yet. Be the first to post!</div>
+              ) : (
+                notes.map((note) => (
+                  <div className="note-card" key={note.id}>
+                    <div className="note-card__header">
+                      <span className="note-card__author">
+                        {members.find((m) => m.id === note.authorId)?.name ?? "Unknown"}
+                      </span>
+                      <span className="note-card__time">{formatDate(note.createdAt)}</span>
+                    </div>
+                    <div className="note-card__content">{note.content}</div>
+                    {note.authorId === data.userId && (
+                      <button className="note-card__delete" onClick={() => handleDeleteNote(note.id)} type="button">
+                        Delete
+                      </button>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </article>
+        ) : null}
+
+        {/* ── AI Chatbot FAB + Drawer ── */}
+        {data.groups.length > 0 && (
+          <>
+            <button className="chat-fab" onClick={() => setChatOpen(!chatOpen)} type="button" aria-label="AI Chat">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+              </svg>
+            </button>
+
+            {chatOpen && (
+              <div className="chat-drawer">
+                <div className="chat-drawer__header">
+                  <h3>PayZen AI</h3>
+                  <button className="chat-drawer__close" onClick={() => setChatOpen(false)} type="button">&times;</button>
+                </div>
+                <div className="chat-quick-prompts">
+                  <button onClick={() => handleChat("Analyze my spending")} type="button">Analyze spending</button>
+                  <button onClick={() => handleChat("How can I save money?")} type="button">How to save?</button>
+                  <button onClick={() => handleChat("What is my biggest expense?")} type="button">Biggest expense?</button>
+                </div>
+                <div className="chat-messages">
+                  {chatMessages.length === 0 && (
+                    <div className="chat-msg chat-msg--ai">Hi! I&apos;m your PayZen financial advisor. Ask me about your spending patterns, savings strategies, or budget insights.</div>
+                  )}
+                  {chatMessages.map((msg, i) => (
+                    <div key={i} className={`chat-msg chat-msg--${msg.role === "user" ? "user" : "ai"}`}>
+                      {msg.text}
+                    </div>
+                  ))}
+                  {chatPending && <div className="chat-msg chat-msg--ai"><span className="spinner" /> Thinking...</div>}
+                  <div ref={chatEndRef} />
+                </div>
+                <div className="chat-input-row">
+                  <input
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleChat()}
+                    placeholder="Ask about your finances..."
+                  />
+                  <button onClick={() => handleChat()} disabled={chatPending || !chatInput.trim()} type="button">Send</button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
       </section>
+
+      {/* ── Mobile Bottom Nav ── */}
+      <nav className="mobile-nav">
+        {sections.slice(0, 5).map((item) => {
+          const Icon = sectionIcons[item.key];
+          return (
+            <button
+              key={item.key}
+              className={`mobile-nav__btn ${section === item.key ? "mobile-nav__btn--active" : ""}`}
+              onClick={() => setSection(item.key)}
+              type="button"
+            >
+              <Icon />
+              {item.label}
+            </button>
+          );
+        })}
+      </nav>
     </div>
   );
 }
